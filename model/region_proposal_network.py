@@ -103,13 +103,13 @@ class RegionProposalNetwork(nn.Module):
             np.array(self.anchor_base),
             self.feat_stride, hh, ww)
 
-        n_anchor = anchor.shape[0] // (hh * ww)
+        n_anchor = anchor.shape[0] // (hh * ww) #anchor의 개수(A) , hh*ww = K
         h = F.relu(self.conv1(x))
 
         rpn_locs = self.loc(h)
         # UNNOTE: check whether need contiguous
         # A: Yes
-        rpn_locs = rpn_locs.permute(0, 2, 3, 1).contiguous().view(n, -1, 4)
+        rpn_locs = rpn_locs.permute(0, 2, 3, 1).contiguous().view(n, -1, 4) #(N,C,H,W) -> (N,H,W,C) ->(N,n,4)
         rpn_scores = self.score(h)
         rpn_scores = rpn_scores.permute(0, 2, 3, 1).contiguous()
         rpn_softmax_scores = F.softmax(rpn_scores.view(n, hh, ww, n_anchor, 2), dim=4)
@@ -146,15 +146,15 @@ def _enumerate_shifted_anchor(anchor_base, feat_stride, height, width):
     # !TODO: add support for torch.CudaTensor
     # xp = cuda.get_array_module(anchor_base)
     # it seems that it can't be boosed using GPU
-    import numpy as xp
-    shift_y = xp.arange(0, height * feat_stride, feat_stride)
-    shift_x = xp.arange(0, width * feat_stride, feat_stride)
-    shift_x, shift_y = xp.meshgrid(shift_x, shift_y)
-    shift = xp.stack((shift_y.ravel(), shift_x.ravel(),
+    #import numpy as xp
+    shift_y = np.arange(0, height * feat_stride, feat_stride)
+    shift_x = np.arange(0, width * feat_stride, feat_stride)
+    shift_x, shift_y = np.meshgrid(shift_x, shift_y)
+    shift = np.stack((shift_y.ravel(), shift_x.ravel(),
                       shift_y.ravel(), shift_x.ravel()), axis=1)
 
     A = anchor_base.shape[0]
-    K = shift.shape[0]
+    K = shift.shape[0]   # height * width
     anchor = anchor_base.reshape((1, A, 4)) + \
              shift.reshape((1, K, 4)).transpose((1, 0, 2))
     anchor = anchor.reshape((K * A, 4)).astype(np.float32)
@@ -175,8 +175,8 @@ def _enumerate_shifted_anchor_torch(anchor_base, feat_stride, height, width):
     import torch as t
     shift_y = t.arange(0, height * feat_stride, feat_stride)
     shift_x = t.arange(0, width * feat_stride, feat_stride)
-    shift_x, shift_y = xp.meshgrid(shift_x, shift_y)
-    shift = xp.stack((shift_y.ravel(), shift_x.ravel(),
+    shift_x, shift_y = np.meshgrid(shift_x, shift_y)
+    shift = np.stack((shift_y.ravel(), shift_x.ravel(),
                       shift_y.ravel(), shift_x.ravel()), axis=1)
 
     A = anchor_base.shape[0]

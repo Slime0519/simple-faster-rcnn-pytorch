@@ -394,7 +394,7 @@ class ProposalCreator:
         # roi = loc2bbox(anchor, loc)
         roi = loc2bbox(anchor, loc)
 
-        # Clip predicted boxes to image.
+        # Clip predicted boxes to image. 범위 제한
         roi[:, slice(0, 4, 2)] = np.clip(
             roi[:, slice(0, 4, 2)], 0, img_size[0])
         roi[:, slice(1, 4, 2)] = np.clip(
@@ -413,7 +413,7 @@ class ProposalCreator:
         order = score.ravel().argsort()[::-1]
         if n_pre_nms > 0:
             order = order[:n_pre_nms]
-        roi = roi[order, :]
+        roi = roi[order, :] # max index 개수까지 자름.
         score = score[order]
 
         # Apply nms (e.g. threshold = 0.7).
