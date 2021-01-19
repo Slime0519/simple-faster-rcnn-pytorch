@@ -66,6 +66,8 @@ class NormalExtractor_ResNet(nn.Module):
             self.dilation *= stride
             stride = 1
         if stride != 1 or self.inplanes != planes * block.expansion:
+            print("stride : {}, dilation : {}".format(stride, dilate))
+            print("block_expansion : {} plane : {} self.inplanes : {}".format(block.expansion, planes, self.inplanes))
             downsample = nn.Sequential(
                 conv1x1(self.inplanes, planes * block.expansion, stride),
                 norm_layer(planes * block.expansion),
@@ -92,11 +94,11 @@ class NormalExtractor_ResNet(nn.Module):
         x = self.layer1(x)
         x = self.layer2(x)
         x = self.layer3(x)
-        x = self.layer4(x)
+        #x = self.layer4(x)
 
-        x = self.avgpool(x)
-        x = torch.flatten(x, 1)
-        x = self.fc(x)
+        #x = self.avgpool(x)
+        ##x = torch.flatten(x, 1)
+        #x = self.fc(x)
 
         return x
 
@@ -111,6 +113,7 @@ class TargetExtractor_ResNet(nn.Module):
         if norm_layer is None:
             norm_layer = nn.BatchNorm2d
         self._norm_layer = norm_layer
+
 
         self.inplanes = 64
         self.dilation = 1
@@ -155,19 +158,35 @@ class TargetExtractor_ResNet(nn.Module):
                 elif isinstance(m, BasicBlock):
                     nn.init.constant_(m.bn2.weight, 0)
 
-    def _make_layer(self, block, planes, blocks, stride=1, dilate=1):
+    def _make_layer(self, block, planes, blocks, stride=1, dilate=False):
         norm_layer = self._norm_layer
+        """
         downsample = nn.Sequential(
-                conv1x1(self.inplanes, planes * block.expansion,stride=2),
+                conv1x1(self.inplanes, planes * block.expansion,stride=stride),
                 norm_layer(planes * block.expansion),
             )
+        """
+        previous_dilation = self.dilation
+        downsample  = None
         layers = []
+        if dilate:
+            self.dilation = stride
+            stride = 1
+        if stride != 1 or self.inplanes != planes * block.expansion:
+            print("stride : {}, dilation : {}".format(stride, dilate))
+            print("block_expansion : {} plane : {} self.inplanes : {}".format(block.expansion, planes, self.inplanes))
+            downsample = nn.Sequential(
+                conv1x1(self.inplanes, planes * block.expansion, stride),
+                norm_layer(planes * block.expansion),
+            )
+        if dilate is None:
+            downsample = None
         layers.append(block(self.inplanes, planes, stride, downsample, self.groups,
-                            self.base_width, dilate, norm_layer))
+                            self.base_width, previous_dilation, norm_layer))
         self.inplanes = planes * block.expansion
         for _ in range(1, blocks):
             layers.append(block(self.inplanes, planes, groups=self.groups,
-                                base_width=self.base_width, dilation=dilate,
+                                base_width=self.base_width, dilation=self.dilation,
                                 norm_layer=norm_layer))
 
         return nn.Sequential(*layers)
@@ -177,15 +196,15 @@ class TargetExtractor_ResNet(nn.Module):
         x = self.bn1(x)
         x = self.relu(x)
         x = self.maxpool(x)
-
+        print("after maxpool : {}".format(x.shape))
         x = self.layer1(x)
         x = self.layer2(x)
-        x = self.layer3(x)
-        x = self.layer4(x)
+        x = self.layer3(x) #output size (3,512,512) ->(1024,16,16)
+     #   x = self.layer4(x)
 
-        x = self.avgpool(x)
-        x = torch.flatten(x, 1)
-        x = self.fc(x)
+      #  x = self.avgpool(x)
+     #   x = torch.flatten(x, 1)
+      #  x = self.fc(x)
 
         return x
 
@@ -208,19 +227,25 @@ class DilatedBottleneck(nn.Module):
             norm_layer = nn.BatchNorm2d
         width = int(planes * (base_width / 64.)) * groups
         # Both self.conv2 and self.downsample layers downsample the input when stride != 1
+
         self.conv1 = conv1x1(inplanes, width)
         self.bn1 = norm_layer(width)
-        self.conv2 = conv3x3(width, width, stride, groups, dilation)
+        self.conv2 = conv3x3(width, width,stride = stride
+                             ,groups = groups, dilation = dilation)
         self.bn2 = norm_layer(width)
         self.conv3 = conv1x1(width, planes * self.expansion)
         self.bn3 = norm_layer(planes * self.expansion)
         self.relu = nn.ReLU(inplace=True)
         self.downsample = downsample
         self.stride = stride
+
         self.maxpool = nn.MaxPool2d(kernel_size=2,stride=2)
 
     def forward(self, x):
+        if self.downsample is not None:
+            x= self.maxpool(x)
         identity = x
+        print("first x {}".format(x.shape))
 
         out = self.conv1(x)
         out = self.bn1(out)
@@ -229,29 +254,35 @@ class DilatedBottleneck(nn.Module):
         out = self.conv2(out)
         out = self.bn2(out)
         out = self.relu(out)
-        out=  self.maxpool(out)
-
+        #print("first block size : {}".format(out.shape))
+        #if self.downsample is not None:
+            #out= self.maxpool(out)
+        #print(self.downsample)
+        #print("first block size : {}".format(out.shape))
         out = self.conv3(out)
         out = self.bn3(out)
 
         if self.downsample is not None:
             identity = self.downsample(x)
-        print(identity.shape)
-        print(out.shape)
+        print("identity shape {}".format(identity.shape))
+        print("out shape {}".format(out.shape))
         out += identity
         out = self.relu(out)
 
         return out
 
 def _resnet(arch, block, layers, pretrained, progress, **kwargs):
-    model = TargetExtractor_ResNet(block, layers, **kwargs)
+    if arch == "dilated":
+        model = TargetExtractor_ResNet(block, layers, **kwargs)
+    else:
+        model = NormalExtractor_ResNet(block, layers, **kwargs)
     #if pretrained:
        #state_dict = load_state_dict_from_url(model_urls[arch],
          #                                     progress=progress)
         #model.load_state_dict(state_dict)
     return model
 
-def resnet50(pretrained=False, progress=True, **kwargs):
+def resnet50_dilated(pretrained=False, progress=True, **kwargs):
     r"""ResNet-50 model from
     `"Deep Residual Learning for Image Recognition" <https://arxiv.org/pdf/1512.03385.pdf>`_
 
@@ -259,13 +290,37 @@ def resnet50(pretrained=False, progress=True, **kwargs):
         pretrained (bool): If True, returns a model pre-trained on ImageNet
         progress (bool): If True, displays a progress bar of the download to stderr
     """
-    return _resnet('resnet50', DilatedBottleneck, [3, 4, 6, 3], pretrained, progress,
+    return _resnet('dilated', DilatedBottleneck, [3, 4, 6, 3], pretrained, progress,
                    **kwargs)
+def resnet50_normal(pretrained = False, progress =True, **kwargs):
+    return _resnet('normal', Bottleneck, [3,4,6,3], pretrained, progress, **kwargs)
+
 
 if __name__ == "__main__":
-    model = resnet50()
+    model = resnet50_dilated()
     from torchsummary import summary
 
-    summary(model.cuda(),(3,224,224),device='cuda')
+    summary(model.cuda(),(3,512,512),device='cuda')
+   # summary(resnet50_normal().cuda(),(3,512,512),device='cuda')
+"""
+    def slicingindex(str):
+        n = len(str)
+        for i in range(n-1,-1,-1):
+            if str[i]=='.':
+                return i
+
+    layerset = []
+    for layer in model.state_dict().keys():
+        print(layer)
+    for layer in model.state_dict().keys():
+        layerset.append(layer[:slicingindex(layer)])
+        if len(layerset)>1 and layerset[-1] == layerset[-2]:
+            layerset.pop()
+
+    for layer in layerset:
+        print(layer)
+"""
+
+
 
 

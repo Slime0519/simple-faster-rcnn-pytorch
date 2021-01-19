@@ -6,8 +6,8 @@ from torchvision.ops import RoIPool
 
 from model.region_proposal_network import RegionProposalNetwork
 from model.faster_rcnn import FasterRCNN
-from utils import array_tool as at
-from utils.config import opt
+from common_utils import array_tool as at
+from common_utils.config import opt
 
 
 def decom_vgg16():
@@ -158,3 +158,11 @@ def normal_init(m, mean, stddev, truncated=False):
     else:
         m.weight.data.normal_(mean, stddev)
         m.bias.data.zero_()
+
+if __name__ == "__main__":
+    truncated, classifier = decom_vgg16()
+    from torchsummary import summary
+    summary(truncated.cuda(), (3,512,512), device='cuda')
+    summary(vgg16().cuda(), (3,512,512), device='cuda')
+
+    #summary(classifier.cuda(),(512,32,32),device='cuda')

@@ -8,8 +8,8 @@ from torchvision.ops import RoIPool
 
 from model.region_proposal_network import RegionProposalNetwork
 from model.faster_rcnn import FasterRCNN
-from utils import array_tool as at
-from utils.config import opt
+from common_utils import array_tool as at
+from common_utils.config import opt
 
 model_urls = refvgg.model_urls
 cfgs= refvgg.cfgs
