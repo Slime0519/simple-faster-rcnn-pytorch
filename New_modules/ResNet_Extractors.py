@@ -160,25 +160,21 @@ class TargetExtractor_ResNet(nn.Module):
 
     def _make_layer(self, block, planes, blocks, stride=1, dilate=False):
         norm_layer = self._norm_layer
-        """
-        downsample = nn.Sequential(
-                conv1x1(self.inplanes, planes * block.expansion,stride=stride),
-                norm_layer(planes * block.expansion),
-            )
-        """
+
         previous_dilation = self.dilation
         downsample  = None
         layers = []
-        if dilate:
-            self.dilation = stride
-            stride = 1
+       # if dilate:
+       #    self.dilation = stride
+         #   stride = 1
         if stride != 1 or self.inplanes != planes * block.expansion:
-            print("stride : {}, dilation : {}".format(stride, dilate))
-            print("block_expansion : {} plane : {} self.inplanes : {}".format(block.expansion, planes, self.inplanes))
+        #    print("stride : {}, dilation : {}".format(stride, dilate))
+         #   print("block_expansion : {} plane : {} self.inplanes : {}".format(block.expansion, planes, self.inplanes))
             downsample = nn.Sequential(
                 conv1x1(self.inplanes, planes * block.expansion, stride),
                 norm_layer(planes * block.expansion),
             )
+
         if dilate is None:
             downsample = None
         layers.append(block(self.inplanes, planes, stride, downsample, self.groups,
@@ -230,42 +226,45 @@ class DilatedBottleneck(nn.Module):
 
         self.conv1 = conv1x1(inplanes, width)
         self.bn1 = norm_layer(width)
-        self.conv2 = conv3x3(width, width,stride = stride
-                             ,groups = groups, dilation = dilation)
+        self.conv2 = conv3x3(width, width,stride = 1
+                             ,groups = groups, dilation = stride)
         self.bn2 = norm_layer(width)
         self.conv3 = conv1x1(width, planes * self.expansion)
         self.bn3 = norm_layer(planes * self.expansion)
         self.relu = nn.ReLU(inplace=True)
         self.downsample = downsample
         self.stride = stride
-
+        self.dilation = dilation
         self.maxpool = nn.MaxPool2d(kernel_size=2,stride=2)
 
     def forward(self, x):
-        if self.downsample is not None:
-            x= self.maxpool(x)
+
         identity = x
-        print("first x {}".format(x.shape))
+       # print("first x {}".format(x.shape))
 
         out = self.conv1(x)
         out = self.bn1(out)
         out = self.relu(out)
-
+     #   print("layer1 first : {}".format(out.shape))
         out = self.conv2(out)
+     #   print("layer1 second : {}".format(out.shape))
         out = self.bn2(out)
         out = self.relu(out)
-        #print("first block size : {}".format(out.shape))
-        #if self.downsample is not None:
-            #out= self.maxpool(out)
-        #print(self.downsample)
-        #print("first block size : {}".format(out.shape))
+        if self.stride>1:
+       #     print("in downsample : {}".format(out.shape))
+       #     print("dilation : {}".format(self.stride))
+            out = self.maxpool(out)
+
         out = self.conv3(out)
         out = self.bn3(out)
 
         if self.downsample is not None:
             identity = self.downsample(x)
-        print("identity shape {}".format(identity.shape))
-        print("out shape {}".format(out.shape))
+            #print("dilation of 3x3 kernel : {}".format(self.conv2.dilation))
+    #        from torchsummary.torchsummary import summary
+     #       summary(self.downsample,input_size = x.shape[1:],device='cuda')
+   #     print("identity shape {}".format(identity.shape))
+    #    print("out shape {}".format(out.shape))
         out += identity
         out = self.relu(out)
 
@@ -301,7 +300,7 @@ if __name__ == "__main__":
     from torchsummary import summary
 
     summary(model.cuda(),(3,512,512),device='cuda')
-   # summary(resnet50_normal().cuda(),(3,512,512),device='cuda')
+  #  summary(resnet50_normal().cuda(),(3,512,512),device='cuda')
 """
     def slicingindex(str):
         n = len(str)
@@ -319,8 +318,8 @@ if __name__ == "__main__":
 
     for layer in layerset:
         print(layer)
-"""
 
+"""
 
 
 
