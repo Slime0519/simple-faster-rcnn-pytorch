@@ -1,43 +1,48 @@
-from __future__ import  absolute_import
+from __future__ import absolute_import
 import torch as t
 from torch import nn
 from torchvision.models import vgg16
 from torchvision.ops import RoIPool
 
+from New_modules.ResNet_Extractors import resnet50_dilated,resnet50_normal
 from model.region_proposal_network import RegionProposalNetwork
 from model.faster_rcnn import FasterRCNN
 from common_utils import array_tool as at
 from common_utils.config import opt
 
 
-def decom_vgg16():
+
+def decom_resnet50():
     # the 30th layer of features is relu of conv5_3
     if opt.caffe_pretrain:
         model = vgg16(pretrained=False)
         if not opt.load_path:
             model.load_state_dict(t.load(opt.caffe_pretrain_path))
     else:
-        model = vgg16(not opt.load_path)
+        model = resnet50_normal(not opt.load_path)
 
-    features = list(model.features)[:30]
-    classifier = model.classifier
-
-    classifier = list(classifier)
-    del classifier[6]
-    if not opt.use_drop:
-        del classifier[5]
-        del classifier[2]
-    classifier = nn.Sequential(*classifier)
+    #features = list(model.features)[:30]
+    features = nn.Sequential(model.conv1, model.bn1, model.relu, model.maxpool, model.layer1, model.layer2,model.layer3)
+    classifier = model.layer4
+   # classifier = list(classifier)
+   # del classifier[6]
+  #  if not opt.use_drop:
+    #    del classifier[5]
+   #     del classifier[2]
+  #  classifier = nn.Sequential(*classifier)
 
     # freeze top4 conv
-    for layer in features[:10]:
+    #freeze first block -> 수정필요할듯
+    for layer in features[:42]:
         for p in layer.parameters():
             p.requires_grad = False
 
     return nn.Sequential(*features), classifier
+#def make_classifier():
 
 
-class FasterRCNNVGG16(FasterRCNN):
+
+class FasterRCNN_ResNet50(FasterRCNN):
     """Faster R-CNN based on VGG-16.
     For descriptions on the interface of this model, please refer to
     :class:`model.faster_rcnn.FasterRCNN`.
@@ -60,8 +65,7 @@ class FasterRCNNVGG16(FasterRCNN):
                  ratios=[0.5, 1, 2],
                  anchor_scales=[8, 16, 32]
                  ):
-                 
-        extractor, classifier = decom_vgg16()
+        extractor, classifier = decom_resnet50()
 
         rpn = RegionProposalNetwork(
             512, 512,
@@ -70,26 +74,29 @@ class FasterRCNNVGG16(FasterRCNN):
             feat_stride=self.feat_stride,
         )
 
-        head = VGG16RoIHead(
+        head = ResNetRoIHead(
             n_class=n_fg_class + 1,
-            roi_size=7,
+            #roi_size=7,
+            roi_size=16, #VGG = 7, ResNet = 16
             spatial_scale=(1. / self.feat_stride),
             classifier=classifier
         )
 
-        super(FasterRCNNVGG16, self).__init__(
+        super(FasterRCNN_ResNet50, self).__init__(
             extractor,
             rpn,
             head,
         )
 
 
-class VGG16RoIHead(nn.Module):
+
+
+class ResNetRoIHead(nn.Module):
     """Faster R-CNN Head for VGG-16 based implementation.
     This class is used as a head for Faster R-CNN.
     This outputs class-wise localizations and classification based on feature
     maps in the given RoIs.
-    
+
     Args:
         n_class (int): The number of classes possibly including the background.
         roi_size (int): Height and width of the feature maps after RoI-pooling.
@@ -101,19 +108,20 @@ class VGG16RoIHead(nn.Module):
     def __init__(self, n_class, roi_size, spatial_scale,
                  classifier):
         # n_class includes the background
-        super(VGG16RoIHead, self).__init__()
+        super(ResNetRoIHead, self).__init__()
 
         self.classifier = classifier
-        self.cls_loc = nn.Linear(4096, n_class * 4)
-        self.score = nn.Linear(4096, n_class)
-
+        #self.cls_loc = nn.Linear(4096, n_class * 4)
+        #self.score = nn.Linear(4096, n_class)
+        self.cls_loc = nn.Linear(2048, n_class * 4)
+        self.score = nn.Linear(2048, n_class)
         normal_init(self.cls_loc, 0, 0.001)
         normal_init(self.score, 0, 0.01)
 
         self.n_class = n_class
         self.roi_size = roi_size
         self.spatial_scale = spatial_scale
-        self.roi = RoIPool( (self.roi_size, self.roi_size),self.spatial_scale)
+        self.roi = RoIPool((self.roi_size, self.roi_size), self.spatial_scale)
 
     def forward(self, x, rois, roi_indices):
         """Forward the chain.
@@ -138,13 +146,15 @@ class VGG16RoIHead(nn.Module):
         indices_and_rois = t.cat([roi_indices[:, None], rois], dim=1)
         # NOTE: important: yx->xy
         xy_indices_and_rois = indices_and_rois[:, [0, 2, 1, 4, 3]]
-        indices_and_rois =  xy_indices_and_rois.contiguous()
+        indices_and_rois = xy_indices_and_rois.contiguous()
 
-        pool = self.roi(x, indices_and_rois)
-        pool = pool.view(pool.size(0), -1)
+        pool = self.roi(x, indices_and_rois) #ROI pooling
+        pool = pool.view(pool.size(0), -1) #flatten
         fc7 = self.classifier(pool)
         roi_cls_locs = self.cls_loc(fc7)
-        roi_scores = self.score(fc7)
+        roi_scores = self.score(fc7)  #apply softmax function in predict function which contained parent class
+
+
         return roi_cls_locs, roi_scores
 
 
@@ -159,11 +169,22 @@ def normal_init(m, mean, stddev, truncated=False):
         m.weight.data.normal_(mean, stddev)
         m.bias.data.zero_()
 
-if __name__ == "__main__":
-    truncated, classifier = decom_vgg16()
-    from torchsummary import summary
-    summary(truncated.cuda(), (3,512,512), device='cuda')
 
-    summary(vgg16().cuda(), (3,512,512), device='cuda')
-    summary(classifier.cuda(), (1,512*7*7), device='cuda')
-    #summary(classifier.cuda(),(512,32,32),device='cuda')
+if __name__ == "__main__":
+    truncated, classifier = decom_resnet50()
+    from torchsummary import summary
+
+    summary(truncated.cuda(), (3, 512, 512), device='cuda')
+    #summary(vgg16().cuda(), (3, 512, 512), device='cuda')
+    summary(classifier.cuda(), (1024,32,32), device='cuda')
+    # summary(classifier.cuda(),(512,32,32),device='cuda')
+    """
+    head = ResNetRoIHead(
+        n_class=20 + 1,
+        # roi_size=7,
+        roi_size=16,  # VGG = 7, ResNet = 16
+        spatial_scale=(1. / 16),
+        classifier=classifier
+    )
+    summary(head.cuda(), (3,512,512), device='cuda')
+    """

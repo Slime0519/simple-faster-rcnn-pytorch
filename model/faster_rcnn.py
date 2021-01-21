@@ -171,7 +171,7 @@ class FasterRCNN(nn.Module):
             mask = prob_l > self.score_thresh
             cls_bbox_l = cls_bbox_l[mask]
             prob_l = prob_l[mask]
-            keep = nms(cls_bbox_l, prob_l,self.nms_thresh)
+            keep = nms(cls_bbox_l, prob_l, self.nms_thresh)
             # import ipdb;ipdb.set_trace()
             # keep = cp.asnumpy(keep)
             bbox.append(cls_bbox_l[keep].cpu().numpy())

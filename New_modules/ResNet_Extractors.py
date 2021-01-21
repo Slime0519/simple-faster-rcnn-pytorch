@@ -301,6 +301,7 @@ if __name__ == "__main__":
 
     summary(model.cuda(),(3,512,512),device='cuda')
   #  summary(resnet50_normal().cuda(),(3,512,512),device='cuda')
+    summary(resnet.resnet50().cuda(),(3,512,512),device='cuda')
 """
     def slicingindex(str):
         n = len(str)

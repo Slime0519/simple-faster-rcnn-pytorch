@@ -8,6 +8,7 @@ from tqdm import tqdm
 from common_utils.config import opt
 from data.dataset import Dataset, TestDataset, inverse_normalize
 from model import FasterRCNNVGG16
+from New_modules.ResNet_Extractors import NormalExtractor_ResNet
 from torch.utils import data as data_
 from trainer import FasterRCNNTrainer
 from common_utils import array_tool as at
@@ -62,7 +63,8 @@ def train(**kwargs):
                                        shuffle=False, \
                                        pin_memory=True
                                        )
-    faster_rcnn = FasterRCNNVGG16()
+    #faster_rcnn = FasterRCNNVGG16()
+    faster_rcnn = NormalExtractor_ResNet()
     print('model construct completed')
     trainer = FasterRCNNTrainer(faster_rcnn).cuda()
     if opt.load_path:
