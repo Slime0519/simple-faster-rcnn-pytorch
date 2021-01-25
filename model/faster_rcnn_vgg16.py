@@ -69,8 +69,8 @@ class FasterRCNNVGG16(FasterRCNN):
             anchor_scales=anchor_scales,
             feat_stride=self.feat_stride,
         )
-
-        head = VGG16RoIHead(
+        ## roi 검사 후 제거 필요
+        head = VGG16RoIHead( #-> ROIpooling 수행
             n_class=n_fg_class + 1,
             roi_size=7,
             spatial_scale=(1. / self.feat_stride),

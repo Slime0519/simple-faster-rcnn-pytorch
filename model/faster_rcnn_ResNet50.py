@@ -14,30 +14,16 @@ from common_utils.config import opt
 
 def decom_resnet50():
     # the 30th layer of features is relu of conv5_3
-    if opt.caffe_pretrain:
-        model = vgg16(pretrained=False)
-        if not opt.load_path:
-            model.load_state_dict(t.load(opt.caffe_pretrain_path))
-    else:
-        model = resnet50_normal(not opt.load_path)
+   # if opt.caffe_pretrain:
+    #    model = vgg16(pretrained=False)
+     #   if not opt.load_path:
+    #        model.load_state_dict(t.load(opt.caffe_pretrain_path))
+   # else:
+    model = resnet50_normal(not opt.load_path)
 
-    #features = list(model.features)[:30]
-    features = nn.Sequential(model.conv1, model.bn1, model.relu, model.maxpool, model.layer1, model.layer2,model.layer3)
-    classifier = model.layer4
-   # classifier = list(classifier)
-   # del classifier[6]
-  #  if not opt.use_drop:
-    #    del classifier[5]
-   #     del classifier[2]
-  #  classifier = nn.Sequential(*classifier)
+    classifier = model.classifier
 
-    # freeze top4 conv
-    #freeze first block -> 수정필요할듯
-    for layer in features[:42]:
-        for p in layer.parameters():
-            p.requires_grad = False
-
-    return nn.Sequential(*features), classifier
+    return model, classifier
 #def make_classifier():
 
 
@@ -58,7 +44,7 @@ class FasterRCNN_ResNet50(FasterRCNN):
 
     """
 
-    feat_stride = 16  # downsample 16x for output of conv5 in vgg16
+    feat_stride = 32  # downsample 16x for output of conv5 in vgg16
 
     def __init__(self,
                  n_fg_class=20,
@@ -68,7 +54,7 @@ class FasterRCNN_ResNet50(FasterRCNN):
         extractor, classifier = decom_resnet50()
 
         rpn = RegionProposalNetwork(
-            512, 512,
+            2048, 2048,
             ratios=ratios,
             anchor_scales=anchor_scales,
             feat_stride=self.feat_stride,
