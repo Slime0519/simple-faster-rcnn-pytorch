@@ -38,8 +38,11 @@ class NormalExtractor_ResNet(nn.Module):
                                        dilate=replace_stride_with_dilation[1])
         self.layer4 = self._make_layer(block, 512, layers[3], stride=2,
                                        dilate=replace_stride_with_dilation[2])
-        self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
-        self.fc = nn.Linear(512 * block.expansion, num_classes)
+
+        #self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
+        #self.fc = nn.Linear(512 * block.expansion, num_classes)
+
+        self.classifier = Classifier(in_channels=512*block.expansion, num_classes= num_classes)
 
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
@@ -66,8 +69,6 @@ class NormalExtractor_ResNet(nn.Module):
             self.dilation *= stride
             stride = 1
         if stride != 1 or self.inplanes != planes * block.expansion:
-            print("stride : {}, dilation : {}".format(stride, dilate))
-            print("block_expansion : {} plane : {} self.inplanes : {}".format(block.expansion, planes, self.inplanes))
             downsample = nn.Sequential(
                 conv1x1(self.inplanes, planes * block.expansion, stride),
                 norm_layer(planes * block.expansion),
@@ -91,16 +92,17 @@ class NormalExtractor_ResNet(nn.Module):
         x = self.relu(x)
         x = self.maxpool(x)
 
-        x = self.layer1(x)
-        x = self.layer2(x)
+        sub = self.layer1(x)
+        x = self.layer2(sub)
         x = self.layer3(x)
-        #x = self.layer4(x)
+        x= self.layer4(x)  # output size (3,512,512) ->(2048,16,16)
 
-        #x = self.avgpool(x)
-        ##x = torch.flatten(x, 1)
-        #x = self.fc(x)
+      #  x = self.classifier(x)
+      #  x = self.avgpool(x)
+      #  x = torch.flatten(x, 1)
+      #  x = self.fc(x)
 
-        return x
+        return x, sub
 
     def forward(self, x):
         return self._forward_impl(x)
@@ -138,8 +140,9 @@ class TargetExtractor_ResNet(nn.Module):
                                        dilate=replace_stride_with_dilation[1])
         self.layer4 = self._make_layer(block, 512, layers[3], stride=2,
                                        dilate=replace_stride_with_dilation[2])
-        self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
-        self.fc = nn.Linear(512 * block.expansion, num_classes)
+        #self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
+        #self.fc = nn.Linear(512 * block.expansion, num_classes)
+        self.classifier = Classifier(in_channels=512*block.expansion, num_classes= num_classes)
 
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
@@ -153,7 +156,7 @@ class TargetExtractor_ResNet(nn.Module):
         # This improves the model by 0.2~0.3% according to https://arxiv.org/abs/1706.02677
         if zero_init_residual:
             for m in self.modules():
-                if isinstance(m, Bottleneck):
+                if isinstance(m, DilatedBottleneck):
                     nn.init.constant_(m.bn3.weight, 0)
                 elif isinstance(m, BasicBlock):
                     nn.init.constant_(m.bn2.weight, 0)
@@ -186,6 +189,7 @@ class TargetExtractor_ResNet(nn.Module):
                                 norm_layer=norm_layer))
 
         return nn.Sequential(*layers)
+
     def _forward_impl(self, x):
         # See note [TorchScript super()]
         x = self.conv1(x)
@@ -193,16 +197,12 @@ class TargetExtractor_ResNet(nn.Module):
         x = self.relu(x)
         x = self.maxpool(x)
         print("after maxpool : {}".format(x.shape))
-        x = self.layer1(x)
-        x = self.layer2(x)
-        x = self.layer3(x) #output size (3,512,512) ->(1024,16,16)
-     #   x = self.layer4(x)
-
-      #  x = self.avgpool(x)
-     #   x = torch.flatten(x, 1)
-      #  x = self.fc(x)
-
-        return x
+        sub = self.layer1(x)
+        x=  self.layer2(sub)
+        x = self.layer3(x)
+        x = self.layer4(x) #output size (3,512,512) ->(2048,16,16)
+        x = self.classifier(x)
+        return x, sub
 
     def forward(self, x):
         return self._forward_impl(x)
@@ -270,6 +270,18 @@ class DilatedBottleneck(nn.Module):
 
         return out
 
+class Classifier(nn.Module):
+    def __init__(self, in_channels, num_classes):
+        super(Classifier, self).__init__()
+        self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
+        self.fc = nn.Linear(in_channels, num_classes)
+
+    def forward(self,x):
+        out = self.avgpool(x)
+        out = torch.flatten(out,1)
+        out = self.fc(out)
+        return out
+
 def _resnet(arch, block, layers, pretrained, progress, **kwargs):
     if arch == "dilated":
         model = TargetExtractor_ResNet(block, layers, **kwargs)
@@ -297,11 +309,12 @@ def resnet50_normal(pretrained = False, progress =True, **kwargs):
 
 if __name__ == "__main__":
     model = resnet50_dilated()
+  #  model = resnet50_normal()
     from torchsummary import summary
 
     summary(model.cuda(),(3,512,512),device='cuda')
   #  summary(resnet50_normal().cuda(),(3,512,512),device='cuda')
-    summary(resnet.resnet50().cuda(),(3,512,512),device='cuda')
+   # summary(resnet.resnet50().cuda(),(3,512,512),device='cuda')
 """
     def slicingindex(str):
         n = len(str)
